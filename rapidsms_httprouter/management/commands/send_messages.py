@@ -1,15 +1,14 @@
 import traceback
 import time
 from django.core.management.base import BaseCommand
-from rapidsms.models import Backend, Connection, Contact
 from rapidsms_httprouter.models import Message, MessageBatch
-from rapidsms_httprouter.router import get_router
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction, close_connection
 from urllib import quote_plus
 from urllib2 import urlopen
 from rapidsms.log.mixin import LoggerMixin
+
 
 class Command(BaseCommand, LoggerMixin):
 
@@ -22,7 +21,6 @@ class Command(BaseCommand, LoggerMixin):
         """
         response = urlopen(url, timeout=15)
         return response.getcode()
-
 
     def build_send_url(self, router_url, backend, recipients, text, priority=1, **kwargs):
         """
@@ -67,7 +65,6 @@ class Command(BaseCommand, LoggerMixin):
 
         return full_url
 
-
     def send_backend_chunk(self, router_url, pks, backend_name, priority):
         msgs = Message.objects.using(self.db_key).filter(pk__in=pks).exclude(connection__identity__iregex="[a-z]")
         try:
@@ -87,7 +84,6 @@ class Command(BaseCommand, LoggerMixin):
             self.error("SMS%s Message not sent: %s .. queued for later delivery." % (pks, str(e)))
             msgs.update(status='Q')
 
-
     def send_all(self, router_url, to_send, priority):
         pks = []
         if len(to_send):
@@ -105,13 +101,12 @@ class Command(BaseCommand, LoggerMixin):
 
     def send_individual(self, router_url, priority=1):
         to_process = Message.objects.using(self.db_key).filter(direction='O',
-                          status__in=['Q'], batch=None).order_by('priority', 'status', 'connection__backend__name', 'id') #Order by ID so that they are FIFO in absence of any other priority
+                          status__in=['Q'], batch=None).order_by('priority', 'status', 'connection__backend__name', 'id')  # Order by ID so that they are FIFO in absence of any other priority
         if len(to_process):
             self.debug("found [%d] individual messages to proccess, sending the first one..." % len(to_process))
             self.send_all(router_url, [to_process[0]], priority)
         else:
             self.debug("found no individual messages to process")
-
 
     def process_messages_for_db(self, CHUNK_SIZE, db_key, router_url):
         self.db_key = db_key
@@ -120,21 +115,25 @@ class Command(BaseCommand, LoggerMixin):
 
         if to_process.count():
             self.info("found [%d] batches with status [Q] in db [%s] to process" % (to_process.count(), db_key))
-            batch = to_process[0]
-            priority = batch.priority
-            to_process = batch.messages.using(db_key).filter(direction='O',
-                status__in=['Q']).order_by('priority', 'status', 'connection__backend__name')[:CHUNK_SIZE]
-            self.info("chunk of [%d] messages found in db [%s]" % (to_process.count(), db_key))
-            if to_process.count():
-                self.debug("found message batch [pk=%d] [name=%s] with Queued messages to send" % (batch.pk, batch.name))
-                self.send_all(router_url, to_process, priority)
-            elif batch.messages.using(db_key).filter(status__in=['S', 'C']).count() == batch.messages.using(db_key).count():
-                batch.status = 'S'
-                batch.save()
-                self.info("No more messages in MessageBatch [%d] status set to 'S'" % batch.pk)
+            try:
+                batch = to_process[0]
+            except IndexError:
+                pass
             else:
-                self.debug("Looking to see if there are any messages without a batch to send")
-                self.send_individual(router_url)
+                priority = batch.priority
+                to_process = batch.messages.using(db_key).filter(direction='O',
+                    status__in=['Q']).order_by('priority', 'status', 'connection__backend__name')[:CHUNK_SIZE]
+                self.info("chunk of [%d] messages found in db [%s]" % (to_process.count(), db_key))
+                if to_process.count():
+                    self.debug("found message batch [pk=%d] [name=%s] with Queued messages to send" % (batch.pk, batch.name))
+                    self.send_all(router_url, to_process, priority)
+                elif batch.messages.using(db_key).filter(status__in=['S', 'C']).count() == batch.messages.using(db_key).count():
+                    batch.status = 'S'
+                    batch.save()
+                    self.info("No more messages in MessageBatch [%d] status set to 'S'" % batch.pk)
+                else:
+                    self.debug("Looking to see if there are any messages without a batch to send")
+                    self.send_individual(router_url)
         else:
             self.debug("No batches with status 'Q' found, reverting to individual message sending")
             self.send_individual(router_url)
@@ -145,7 +144,7 @@ class Command(BaseCommand, LoggerMixin):
 
         """
         DB_KEYS = settings.DATABASES.keys()
-        dbs_to_ignore = getattr( settings, 'DBS_TO_IGNORE', [] ) # get the dbs to ignore
+        dbs_to_ignore = getattr(settings, 'DBS_TO_IGNORE', [])  # get the dbs to ignore
         for db in dbs_to_ignore:
             if db in DB_KEYS:
                 DB_KEYS.remove(db)
@@ -168,36 +167,6 @@ class Command(BaseCommand, LoggerMixin):
 
                     self.process_messages_for_db(CHUNK_SIZE, db_key, router_url)
 
-                    self.debug("servicing db '%s'" % db)
-                    router_url = settings.DATABASES[db]['ROUTER_URL']
-                    transaction.enter_transaction_management(using=db)
-                    self.db = db
-                    to_process = MessageBatch.objects.using(db).filter(status='Q')
-                    self.debug("looking for batch messages to process")
-                    if to_process.count():
-                        self.info("found %d batches in %s to process" % (to_process.count(), db))
-                        try:
-                            batch = to_process[0]
-                        except IndexError:
-                            pass
-                        else:
-                            to_process = batch.messages.using(db).filter(direction='O',
-                                          status__in=['Q']).order_by('priority', 'status', 'connection__backend__name')[:CHUNK_SIZE]
-                            self.info("%d chunk of messages found in %s" % (to_process.count(), db))
-                            if to_process.count():
-                                self.debug("found batch message %d with Queued messages to send" % batch.pk)
-                                self.send_all(router_url, to_process)
-                            elif batch.messages.using(db).filter(status__in=['S', 'C']).count() == batch.messages.using(db).count():
-                                self.info("found batch message %d ready to be closed" % batch.pk)
-                                batch.status = 'S'
-                                batch.save()
-                            else:
-                                self.debug("reverting to individual message sending")
-                                self.send_individual(router_url)
-                    else:
-                        self.debug("no batches found, reverting to individual message sending")
-                        self.send_individual(router_url)
-                    transaction.commit(using=db)
                 except Exception, exc:
                     print exc
                     transaction.rollback(using=db_key)
@@ -210,6 +179,3 @@ class Command(BaseCommand, LoggerMixin):
             # deadlocks if it's contanstly polling the messages table
             close_connection()
             time.sleep(0.5)
-
-
-
