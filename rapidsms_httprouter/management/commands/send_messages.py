@@ -52,7 +52,7 @@ class Command(BaseCommand, LoggerMixin):
             if backend_name in router_dict:
                 router_url = router_dict[backend_name]
 
-            # if not, look for a default backend 
+            # if not, look for a default backend
             elif 'default' in router_dict:
                 router_url = router_dict['default']
 
@@ -132,20 +132,24 @@ class Command(BaseCommand, LoggerMixin):
                     self.debug("looking for batch messages to process")
                     if to_process.count():
                         self.info("found %d batches in %s to process" % (to_process.count(), db))
-                        batch = to_process[0]
-                        to_process = batch.messages.using(db).filter(direction='O',
-                                      status__in=['Q']).order_by('priority', 'status', 'connection__backend__name')[:CHUNK_SIZE]
-                        self.info("%d chunk of messages found in %s" % (to_process.count(), db))
-                        if to_process.count():
-                            self.debug("found batch message %d with Queued messages to send" % batch.pk)
-                            self.send_all(router_url, to_process)
-                        elif batch.messages.using(db).filter(status__in=['S', 'C']).count() == batch.messages.using(db).count():
-                            self.info("found batch message %d ready to be closed" % batch.pk)
-                            batch.status = 'S'
-                            batch.save()
+                        try:
+                            batch = to_process[0]
+                        except IndexError:
+                            pass
                         else:
-                            self.debug("reverting to individual message sending")
-                            self.send_individual(router_url)
+                            to_process = batch.messages.using(db).filter(direction='O',
+                                          status__in=['Q']).order_by('priority', 'status', 'connection__backend__name')[:CHUNK_SIZE]
+                            self.info("%d chunk of messages found in %s" % (to_process.count(), db))
+                            if to_process.count():
+                                self.debug("found batch message %d with Queued messages to send" % batch.pk)
+                                self.send_all(router_url, to_process)
+                            elif batch.messages.using(db).filter(status__in=['S', 'C']).count() == batch.messages.using(db).count():
+                                self.info("found batch message %d ready to be closed" % batch.pk)
+                                batch.status = 'S'
+                                batch.save()
+                            else:
+                                self.debug("reverting to individual message sending")
+                                self.send_individual(router_url)
                     else:
                         self.debug("no batches found, reverting to individual message sending")
                         self.send_individual(router_url)
