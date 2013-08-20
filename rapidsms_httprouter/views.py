@@ -1,7 +1,7 @@
 import json
 
 from django import forms
-from django.http import HttpResponse
+from django.http import HttpResponse, Http404
 from django.template import RequestContext
 from django.shortcuts import render_to_response, get_object_or_404
 from django.contrib.auth.decorators import login_required
@@ -17,10 +17,12 @@ from djtables.column import DateColumn
 
 from .models import Message
 from .router import get_router
-from.tasks import handle_incoming
+from .tasks import handle_incoming
 
 import logging
+
 log = logging.getLogger(__name__)
+
 
 class SecureForm(forms.Form):
     """
@@ -39,11 +41,13 @@ class SecureForm(forms.Form):
 
         return self.cleaned_data
 
+
 class MessageForm(SecureForm):
     backend = forms.CharField(max_length=32)
     sender = forms.CharField(max_length=20)
     message = forms.CharField()
     echo = forms.BooleanField(required=False)
+
 
 def receive(request):
     """
@@ -65,8 +69,9 @@ def receive(request):
 
     log.debug("[receive-msg] [{0}] received".format(data.get('sender', 'no-sender')))
 
-    if getattr(settings,'CELERY_MESSAGE_PROCESSING',None):
-        handle_incoming.delay(get_router(),data['backend'], data.get('sender','no-sender'), data.get('message', 'no-message'))
+    if getattr(settings, 'CELERY_MESSAGE_PROCESSING', None):
+        handle_incoming.delay(get_router(), data['backend'], data.get('sender', 'no-sender'),
+                              data.get('message', 'no-message'))
         log.debug("[receive-msg] [{0}] Message sent to celery.".format(str(data.get('sender', 'no-sender'))))
         return HttpResponse("celery handler")
     else:
@@ -82,6 +87,7 @@ def receive(request):
             return HttpResponse()
         else:
             return HttpResponse(json.dumps(response))
+
 
 def outbox(request):
     """
@@ -102,8 +108,10 @@ def outbox(request):
 
     return HttpResponse(json.dumps(response))
 
+
 class DeliveredForm(SecureForm):
     message_id = forms.IntegerField()
+
 
 def delivered(request):
     """
@@ -129,6 +137,7 @@ def can_send(request, message_id):
     else:
         return HttpResponse(status=403)
 
+
 class MessageTable(Table):
     # this is temporary, until i fix ModelTable!
     text = Column()
@@ -140,16 +149,20 @@ class MessageTable(Table):
     class Meta:
         order_by = '-date'
 
+
 class SendForm(forms.Form):
     sender = forms.CharField(max_length=20, initial="12065551212")
-    text = forms.CharField(max_length=160, label="Message", widget=forms.TextInput(attrs={'size':'60'}))
+    text = forms.CharField(max_length=160, label="Message", widget=forms.TextInput(attrs={'size': '60'}))
+
 
 class ReplyForm(forms.Form):
     recipient = forms.CharField(max_length=20)
-    message = forms.CharField(max_length=160, widget=forms.TextInput(attrs={'size':'60'}))
+    message = forms.CharField(max_length=160, widget=forms.TextInput(attrs={'size': '60'}))
+
 
 class SearchForm(forms.Form):
-    search = forms.CharField(label="Keywords", max_length=100, widget=forms.TextInput(attrs={'size':'60'}), required=False)
+    search = forms.CharField(label="Keywords", max_length=100, widget=forms.TextInput(attrs={'size': '60'}),
+                             required=False)
 
 
 def console(request):
@@ -192,11 +205,12 @@ def console(request):
 
                 if terms:
                     term = terms[0]
-                    query = (Q(text__icontains=term) | Q(in_response_to__text__icontains=term) | Q(connection__identity__icontains=term))
+                    query = (Q(text__icontains=term) | Q(in_response_to__text__icontains=term) | Q(
+                        connection__identity__icontains=term))
                     for term in terms[1:]:
-                        query &= (Q(text__icontains=term) | Q(in_response_to__text__icontains=term) | Q(connection__identity__icontains=term))
+                        query &= (Q(text__icontains=term) | Q(in_response_to__text__icontains=term) | Q(
+                            connection__identity__icontains=term))
                     queryset = queryset.filter(query)
-
 
     paginator = Paginator(queryset.order_by('-id'), 20)
     page = request.GET.get('page')
@@ -219,14 +233,26 @@ def console(request):
         }, context_instance=RequestContext(request)
     )
 
+
 @login_required
 def summary(request):
     messages = Message.objects.extra(
-                   {'year':'extract(year from date)',
-                    'month':'extract (month from date)'})\
-               .values('year', 'month', 'connection__backend__name', 'direction')\
-               .annotate(total=Count('id'))\
-               .extra(order_by=['year', 'month', 'connection__backend__name', 'direction'])
+        {'year': 'extract(year from date)',
+         'month': 'extract (month from date)'}) \
+        .values('year', 'month', 'connection__backend__name', 'direction') \
+        .annotate(total=Count('id')) \
+        .extra(order_by=['year', 'month', 'connection__backend__name', 'direction'])
     return render_to_response(
         "router/summary.html",
-        { 'messages': messages}, context_instance=RequestContext(request))
+        {'messages': messages}, context_instance=RequestContext(request))
+
+
+def delivery_report(request):
+    if request.GET.get('username') != getattr(settings, 'DELIVERY_USERNAME') and request.GET.get('password') != getattr(
+            settings, "DELIVERY_PASSWORD"):
+        return Http404
+    message = Message.objects.filter(text=request.GET.get('message'),
+                                     connection__identity=request.GET.get('receiver')).latest('date')
+    message.status = 'D'
+    message.save()
+    return HttpResponse(status=200)
