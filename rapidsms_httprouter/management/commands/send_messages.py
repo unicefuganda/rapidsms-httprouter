@@ -62,6 +62,7 @@ class Command(BaseCommand, LoggerMixin):
 
         # return our built up url with all our variables substituted in
         full_url = router_url % params
+        self.info("Full URL - %s" % full_url)
 
         return full_url
 
