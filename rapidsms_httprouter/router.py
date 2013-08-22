@@ -65,12 +65,20 @@ class HttpRouter(object, LoggerMixin):
 
         # create our connection
         #connection, created = Connection.objects.get_or_create(backend=backend, identity=contact)
-        try:
-            connection = Connection.objects.get(identity=contact)
-        except Connection.DoesNotExist:
-            connection = Connection.objects.create(backend=backend, identity=contact)
-        except Connection.MultipleObjectsReturned:
-            connection = Connection.objects.filter(identity=contact)[0]
+        if backend.name in getattr(settings, 'SPECIAL_BACKENDS', []):
+            # For a special backend a connection will always be created if missing
+            # Add SPECIAL_BACKENDS = ['yo8200'] for mTrac
+            connection, created = Connection.objects.get_or_create(backend=backend, identity=contact)
+        else:
+            # This mostly works for Ureport since they have no special backend
+            # so any connection irrespective of backend will surfice
+            # otherwise we will flood DB with unwanted connections
+            try:
+                connection = Connection.objects.get(identity=contact)
+            except Connection.DoesNotExist:
+                connection = Connection.objects.create(backend=backend, identity=contact)
+            except Connection.MultipleObjectsReturned:
+                connection = Connection.objects.filter(identity=contact)[0]
 
 
         # finally, create our db message
