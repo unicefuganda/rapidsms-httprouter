@@ -1,24 +1,22 @@
 from django.conf import settings
-from django.db import transaction
 from .models import Message
 from rapidsms.models import Backend, Connection
 from rapidsms.apps.base import AppBase
 from rapidsms.messages.incoming import IncomingMessage
 from rapidsms.messages.outgoing import OutgoingMessage
 from rapidsms.log.mixin import LoggerMixin
-from threading import Lock, Thread
+from threading import Lock
 
-from urllib import quote_plus
-from urllib2 import urlopen
-import time
 import re
 
 # our worker threads
 outgoing_worker_threads = []
 
+
 def start_sending_mass_messages():
     "Deprecated"
     pass
+
 
 def stop_sending_mass_messages():
     "Deprecated"
@@ -76,7 +74,6 @@ class HttpRouter(object, LoggerMixin):
             except Connection.MultipleObjectsReturned:
                 connection = Connection.objects.filter(identity=contact)[0]
 
-
         # finally, create our db message
         message = Message.objects.create(connection=connection,
                                          text=text,
@@ -84,7 +81,6 @@ class HttpRouter(object, LoggerMixin):
                                          status=status)
 
         return message
-
 
     def mark_delivered(self, message_id):
         """
@@ -94,7 +90,6 @@ class HttpRouter(object, LoggerMixin):
         message = Message.objects.get(pk=message_id)
         message.status = 'D'
         message.save()
-
 
     def handle_incoming(self, backend, sender, text):
         """
@@ -165,8 +160,6 @@ class HttpRouter(object, LoggerMixin):
         db_message.status = 'H'
         db_message.save()
 
-        db_responses = []
-
         # now send the message responses
         while msg.responses:
             response = msg.responses.pop(0)
@@ -199,7 +192,6 @@ class HttpRouter(object, LoggerMixin):
                 db_message.save()
 
         return db_message
-
 
     def handle_outgoing(self, msg, source=None, application=None):
         """
@@ -241,6 +233,8 @@ class HttpRouter(object, LoggerMixin):
                     if keep_sending is False:
                         send_msg = False
                 except Exception, err:
+                    import traceback
+                    traceback.print_exc(err)
                     app.exception()
 
                 # during any outgoing phase, an app can return True to
@@ -276,7 +270,6 @@ class HttpRouter(object, LoggerMixin):
         self.apps.append(app)
         return app
 
-
     def start(self, start_workers=False):
         """
         Initializes our router.
@@ -300,6 +293,7 @@ class HttpRouter(object, LoggerMixin):
 # we'll get started when we first get used
 http_router = HttpRouter()
 http_router_lock = Lock()
+
 
 def get_router(start_workers=False):
     """
