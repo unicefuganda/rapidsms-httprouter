@@ -9,6 +9,7 @@ from django.conf import settings
 from django.db.models import Count
 from django.db.models import Q
 from django.core.paginator import *
+from django.views.decorators.cache import never_cache
 
 from rapidsms.messages.outgoing import OutgoingMessage
 from rapidsms.models import Connection
@@ -48,7 +49,7 @@ class MessageForm(SecureForm):
     message = forms.CharField()
     echo = forms.BooleanField(required=False)
 
-
+@never_cache
 def receive(request):
     """
     Takes the passed in message.  Creates a record for it, and passes it through
@@ -88,7 +89,7 @@ def receive(request):
         else:
             return HttpResponse(json.dumps(response))
 
-
+@never_cache
 def outbox(request):
     """
     Returns any messages which have been queued to be sent but have no yet been marked
@@ -112,7 +113,7 @@ def outbox(request):
 class DeliveredForm(SecureForm):
     message_id = forms.IntegerField()
 
-
+@never_cache
 def delivered(request):
     """
     Called when a message is delivered by our backend.
@@ -126,7 +127,7 @@ def delivered(request):
 
     return HttpResponse(json.dumps(dict(status="Message marked as sent.")))
 
-
+@never_cache
 def can_send(request, message_id):
     message = get_object_or_404(Message, pk=message_id)
     send_msg = get_router().process_outgoing_phases(message)
@@ -164,7 +165,7 @@ class SearchForm(forms.Form):
     search = forms.CharField(label="Keywords", max_length=100, widget=forms.TextInput(attrs={'size': '60'}),
                              required=False)
 
-
+@never_cache
 def console(request):
     """
     Our web console, lets you see recent messages as well as send out new ones for
@@ -246,7 +247,7 @@ def summary(request):
         "router/summary.html",
         {'messages': messages}, context_instance=RequestContext(request))
 
-
+@never_cache
 def delivery_report(request):
     if request.GET.get('username') != getattr(settings, 'DELIVERY_USERNAME') and request.GET.get('password') != getattr(
             settings, "DELIVERY_PASSWORD"):
