@@ -249,7 +249,7 @@ def summary(request):
 
 @never_cache
 def delivery_report(request):
-    if request.GET.get('username') != getattr(settings, 'DELIVERY_USERNAME') and request.GET.get('password') != getattr(
+    if request.GET.get('username') != getattr(settings, 'DELIVERY_USERNAME') and request.GET.get('passwrd') != getattr(
             settings, "DELIVERY_PASSWORD"):
         return Http404
     message = Message.objects.filter(text=request.GET.get('message'),
