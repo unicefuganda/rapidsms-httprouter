@@ -1,6 +1,7 @@
 import traceback
 import time
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 from rapidsms_httprouter.models import Message, MessageBatch
 from django.conf import settings
 from django.core.mail import send_mail
@@ -11,7 +12,6 @@ from rapidsms.log.mixin import LoggerMixin
 
 
 class Command(BaseCommand, LoggerMixin):
-
     help = """sends messages from all project DBs
     """
 
@@ -57,8 +57,10 @@ class Command(BaseCommand, LoggerMixin):
 
             # none?  blow the hell up
             else:
-                self.error("No router url mapping found for backend '%s', check your settings.ROUTER_URL setting" % backend_name)
-                raise Exception("No router url mapping found for backend '%s', check your settings.ROUTER_URL setting" % backend_name)
+                self.error(
+                    "No router url mapping found for backend '%s', check your settings.ROUTER_URL setting" % backend_name)
+                raise Exception(
+                    "No router url mapping found for backend '%s', check your settings.ROUTER_URL setting" % backend_name)
 
         # return our built up url with all our variables substituted in
         full_url = router_url % params
@@ -69,7 +71,9 @@ class Command(BaseCommand, LoggerMixin):
     def send_backend_chunk(self, router_url, pks, backend_name, priority):
         msgs = Message.objects.using(self.db_key).filter(pk__in=pks).exclude(connection__identity__iregex="[a-z]")
         try:
-            url = self.build_send_url(router_url, backend_name, ' '.join(msgs.values_list('connection__identity', flat=True)), msgs[0].text, priority=str(priority))
+            url = self.build_send_url(router_url, backend_name,
+                                      ' '.join(msgs.values_list('connection__identity', flat=True)), msgs[0].text,
+                                      priority=str(priority))
             status_code = self.fetch_url(url)
 
             # kannel likes to send 202 responses, really any
@@ -101,8 +105,10 @@ class Command(BaseCommand, LoggerMixin):
             self.send_backend_chunk(router_url, pks, backend_name, priority)
 
     def send_individual(self, router_url, priority=1):
-        to_process = Message.objects.using(self.db_key).filter(direction='O',
-                          status__in=['Q'], batch=None).order_by('priority', 'status', 'connection__backend__name', 'id')  # Order by ID so that they are FIFO in absence of any other priority
+        to_process = Message.objects.using(self.db_key).exclude(Q(text="") | Q(text=None) | Q(text=" ")).filter(
+            direction='O',
+            status__in=['Q'], batch=None).order_by('priority', 'status', 'connection__backend__name',
+                                                   'id')  # Order by ID so that they are FIFO in absence of any other priority
         if len(to_process):
             self.debug("found [%d] individual messages to proccess, sending the first one..." % len(to_process))
             self.send_all(router_url, [to_process[0]], priority)
@@ -114,7 +120,7 @@ class Command(BaseCommand, LoggerMixin):
         self.debug("looking for MessageBatch's to process with db [%s]" % str(db_key))
         to_process = MessageBatch.objects.using(db_key).filter(status='Q')
 
-        if to_process.count():
+        if to_process.exists():
             self.info("found [%d] batches with status [Q] in db [%s] to process" % (to_process.count(), db_key))
             try:
                 batch = to_process[0]
@@ -123,12 +129,16 @@ class Command(BaseCommand, LoggerMixin):
             else:
                 priority = batch.priority
                 to_process = batch.messages.using(db_key).filter(direction='O',
-                    status__in=['Q']).order_by('priority', 'status', 'connection__backend__name')[:CHUNK_SIZE]
+                                                                 status__in=['Q']).order_by('priority', 'status',
+                                                                                            'connection__backend__name')[
+                             :CHUNK_SIZE]
                 self.info("chunk of [%d] messages found in db [%s]" % (to_process.count(), db_key))
                 if to_process.count():
-                    self.debug("found message batch [pk=%d] [name=%s] with Queued messages to send" % (batch.pk, batch.name))
+                    self.debug(
+                        "found message batch [pk=%d] [name=%s] with Queued messages to send" % (batch.pk, batch.name))
                     self.send_all(router_url, to_process, priority)
-                elif batch.messages.using(db_key).filter(status__in=['S', 'C']).count() == batch.messages.using(db_key).count():
+                elif batch.messages.using(db_key).filter(status__in=['S', 'C']).count() == batch.messages.using(
+                        db_key).count():
                     batch.status = 'S'
                     batch.save()
                     self.info("No more messages in MessageBatch [%d] status set to 'S'" % batch.pk)
@@ -173,7 +183,8 @@ class Command(BaseCommand, LoggerMixin):
                     transaction.rollback(using=db_key)
                     self.critical(traceback.format_exc(exc))
                     if recipients:
-                        send_mail('[Django] Error: messenger command', str(traceback.format_exc(exc)), 'root@uganda.rapidsms.org', recipients, fail_silently=True)
+                        send_mail('[Django] Error: messenger command', str(traceback.format_exc(exc)),
+                                  'root@uganda.rapidsms.org', recipients, fail_silently=True)
                     continue
 
             # yield from the messages table, messenger can cause
