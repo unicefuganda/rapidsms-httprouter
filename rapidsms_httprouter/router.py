@@ -1,4 +1,6 @@
 from django.conf import settings
+from django.db import transaction
+from django.db.utils import DatabaseError
 from .models import Message
 from rapidsms.models import Backend, Connection
 from rapidsms.apps.base import AppBase
@@ -158,7 +160,15 @@ class HttpRouter(object, LoggerMixin):
             pass
 
         db_message.status = 'H'
-        db_message.save()
+        try:
+            db_message.save()
+        except DatabaseError:
+            try:
+                transaction.rollback()
+            except:
+                pass
+            db_message.status = 'H'
+            db_message.save()
 
         # now send the message responses
         while msg.responses:
