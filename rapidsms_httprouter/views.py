@@ -1,4 +1,6 @@
+from datetime import datetime
 import json
+import threading
 
 from django import forms
 from django.http import HttpResponse, Http404
@@ -49,6 +51,17 @@ class MessageForm(SecureForm):
     message = forms.CharField()
     echo = forms.BooleanField(required=False)
 
+
+class HandleIncomingThread(threading.Thread):
+    def __init__(self, data, **kwargs):
+        self.data = data
+        super(HandleIncomingThread, self).__init__(**kwargs)
+
+    def run(self):
+        print "thread now handling incoming at %s" % str(datetime.now())
+        message = get_router().handle_incoming(self.data['backend'], self.data['sender'], self.data['message'])
+        print "thread done at %s" % str(datetime.now())
+
 @never_cache
 def receive(request):
     """
@@ -75,6 +88,11 @@ def receive(request):
                               data.get('message', 'no-message'))
         log.debug("[receive-msg] [{0}] Message sent to celery.".format(str(data.get('sender', 'no-sender'))))
         return HttpResponse("celery handler")
+    elif getattr(settings, 'THREAD_MESSAGE_PROCESSING', None):
+        log.debug("Handing off request to thread at %s" % str(datetime.now()))
+        HandleIncomingThread(data).start()
+        log.debug("Message is being handled but request released at %s" % str(datetime.now()))
+        return HttpResponse("Message Handled")
     else:
         message = get_router().handle_incoming(data['backend'], data['sender'], data['message'])
         response = {}
