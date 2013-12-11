@@ -1,16 +1,18 @@
 import traceback
 import time
+from urllib import quote_plus
 import urllib2
+
 from django.core.management.base import BaseCommand
 from django.db.models import Q
-from rapidsms_httprouter.models import Message, MessageBatch
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction, close_connection
-from urllib import quote_plus
-from urllib2 import urlopen
+
+from rapidsms_httprouter.models import Message, MessageBatch
 from rapidsms.log.mixin import LoggerMixin
 import requests
+from rapidsms_httprouter.router import get_router
 
 
 class Command(BaseCommand, LoggerMixin):
@@ -27,11 +29,11 @@ class Command(BaseCommand, LoggerMixin):
 
             r = requests.post(**url)
             code = r.status_code
-            self.info( code)
+            self.info(code)
         else:
-            response = urlopen(url, timeout=15)
+            response = urllib2.urlopen(url, timeout=15)
             code = response.getcode()
-            self.info( code)
+            self.info(code)
         return code
 
     def build_send_url(self, router_url, backend, recipients, text, priority=1, **kwargs):
@@ -209,20 +211,18 @@ class Command(BaseCommand, LoggerMixin):
             close_connection()
             time.sleep(0.5)
 
-    def build_send_url_from_backend(self, backend_name, backend_config, text, identities):
-        from rapidsms_httprouter.router import get_router
-
+    def get_backend_class(self, backend_config, backend_name):
         path = backend_config["ENGINE"]
-
         module_name, class_name = path.rsplit('.', 1)
-
         module = __import__(module_name, globals(), locals(), [class_name])
-
         backend_class = getattr(module, class_name)
-
         router = get_router()
-
         backend = backend_class(router, backend_name, **backend_config)
+        return backend
+
+    def build_send_url_from_backend(self, backend_name, backend_config, text, identities):
+
+        backend = self.get_backend_class(backend_config, backend_name)
 
         context = getattr(backend_config, 'context', {})
 

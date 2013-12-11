@@ -1,5 +1,8 @@
 from django.test import TestCase
+from mock import MagicMock, patch, Mock
+from django.conf import settings
 
+from rapidsms.backends.base import BackendBase
 from rapidsms_httprouter.management.commands.send_messages import Command
 from rapidsms_httprouter.models import MessageBatch, Message
 from rapidsms.models import Backend, Connection
@@ -54,3 +57,43 @@ class SendMessagesCommandTestCase(TestCase):
         self.assertEquals((Message.objects.get(pk=msg2.pk)).status, 'S')
         self.assertEquals((Message.objects.get(pk=msg3.pk)).status, 'Q')
         self.assertEquals((Message.objects.get(pk=msg4.pk)).status, 'S')
+
+
+class SendMessagesBackendSupportTestCase(TestCase):
+    def setUp(self):
+        self.command = Command()
+        self.config = {
+            "vumi": {
+                "ENGINE": "rapidsms.backends.vumi.VumiBackend",
+                "sendsms_url": "http://2.2.2.1:9000/send/",
+                "sendsms_user": "username",
+                "sendsms_pass": "password",
+            }
+        }
+
+    def test_that_build_send_url_from_backend_gets_called(self):
+        settings.BACKENDS_CONFIGURATION = self.config
+        self.command.build_send_url_from_backend = MagicMock(return_value="url")
+        self.command.build_send_url("url", "vumi", [], "message", 1)
+        self.command.build_send_url_from_backend.assert_called_with('vumi', self.config['vumi'], 'message', [])
+
+    @patch('requests.post')
+    def test_that_fetch_url_does_a_post_if_the_url_is_a_dict(self, mock_requests):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_requests.return_value = mock_response
+        url = {}
+        self.assertEqual(200, self.command.fetch_url(url))
+
+    @patch('urllib2.urlopen')
+    def test_that_fetch_url_does_a_get_if_the_url_is_a_string(self, mock_urlopen):
+        mock_response = Mock()
+        mock_response.getcode.return_value = 200
+        mock_urlopen.return_value = mock_response
+        url = ""
+        self.assertEqual(200, self.command.fetch_url(url))
+
+    def test_get_backend_class_creates_an_instance_the_backend(self):
+        backend = self.command.get_backend_class(self.config['vumi'], "vumi")
+        self.assertTrue(isinstance(backend, BackendBase))
+
