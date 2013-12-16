@@ -1,14 +1,18 @@
 import traceback
 import time
+from urllib import quote_plus
+import urllib2
+
 from django.core.management.base import BaseCommand
 from django.db.models import Q
-from rapidsms_httprouter.models import Message, MessageBatch
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction, close_connection
-from urllib import quote_plus
-from urllib2 import urlopen
+
+from rapidsms_httprouter.models import Message, MessageBatch
 from rapidsms.log.mixin import LoggerMixin
+import requests
+from rapidsms_httprouter.router import get_router
 
 
 class Command(BaseCommand, LoggerMixin):
@@ -19,48 +23,63 @@ class Command(BaseCommand, LoggerMixin):
         """
         Wrapper around url open, mostly here so we can monkey patch over it in unit tests.
         """
-        response = urlopen(url, timeout=15)
-        return response.getcode()
+        self.info("URL ------------->")
+        self.info(url)
+        if type(url) is dict:
+
+            r = requests.post(**url)
+            code = r.status_code
+            self.info(code)
+        else:
+            response = urllib2.urlopen(url, timeout=15)
+            code = response.getcode()
+            self.info(code)
+        return code
 
     def build_send_url(self, router_url, backend, recipients, text, priority=1, **kwargs):
         """
         Constructs an appropriate send url for the given message.
         """
         # first build up our list of parameters
-        params = {
-            'backend': backend,
-            'recipient': recipients,
-            'text': text,
-            'priority': priority,
-        }
+        installed_backends = getattr(settings, "BACKENDS_CONFIGURATION", {})
 
-        # make sure our parameters are URL encoded
-        params.update(kwargs)
-        for k, v in params.items():
-            try:
-                params[k] = quote_plus(str(v))
-            except UnicodeEncodeError:
-                params[k] = quote_plus(str(v.encode('UTF-8')))
+        if backend in installed_backends:
+            return self.build_send_url_from_backend(backend, installed_backends[backend], text, recipients)
+        else:
+            params = {
+                'backend': backend,
+                'recipient': recipients,
+                'text': text,
+                'priority': priority,
+            }
 
-        # is this actually a dict?  if so, we want to look up the appropriate backend
-        if type(router_url) is dict:
-            router_dict = router_url
-            backend_name = backend
+            # make sure our parameters are URL encoded
+            params.update(kwargs)
+            for k, v in params.items():
+                try:
+                    params[k] = quote_plus(str(v))
+                except UnicodeEncodeError:
+                    params[k] = quote_plus(str(v.encode('UTF-8')))
 
-            # is there an entry for this backend?
-            if backend_name in router_dict:
-                router_url = router_dict[backend_name]
+            # is this actually a dict?  if so, we want to look up the appropriate backend
+            if type(router_url) is dict:
+                router_dict = router_url
+                backend_name = backend
 
-            # if not, look for a default backend
-            elif 'default' in router_dict:
-                router_url = router_dict['default']
+                # is there an entry for this backend?
+                if backend_name in router_dict:
+                    router_url = router_dict[backend_name]
 
-            # none?  blow the hell up
-            else:
-                self.error(
-                    "No router url mapping found for backend '%s', check your settings.ROUTER_URL setting" % backend_name)
-                raise Exception(
-                    "No router url mapping found for backend '%s', check your settings.ROUTER_URL setting" % backend_name)
+                # if not, look for a default backend
+                elif 'default' in router_dict:
+                    router_url = router_dict['default']
+
+                # none?  blow the hell up
+                else:
+                    self.error(
+                        "No router url mapping found for backend '%s', check your settings.ROUTER_URL setting" % backend_name)
+                    raise Exception(
+                        "No router url mapping found for backend '%s', check your settings.ROUTER_URL setting" % backend_name)
 
         # return our built up url with all our variables substituted in
         full_url = router_url % params
@@ -191,3 +210,20 @@ class Command(BaseCommand, LoggerMixin):
             # deadlocks if it's contanstly polling the messages table
             close_connection()
             time.sleep(0.5)
+
+    def get_backend_class(self, backend_config, backend_name):
+        path = backend_config["ENGINE"]
+        module_name, class_name = path.rsplit('.', 1)
+        module = __import__(module_name, globals(), locals(), [class_name])
+        backend_class = getattr(module, class_name)
+        router = get_router()
+        backend = backend_class(router, backend_name, **backend_config)
+        return backend
+
+    def build_send_url_from_backend(self, backend_name, backend_config, text, identities):
+
+        backend = self.get_backend_class(backend_config, backend_name)
+
+        context = getattr(backend_config, 'context', {})
+
+        return backend.prepare_request(0, text, identities, context)
