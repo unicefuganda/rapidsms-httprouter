@@ -1,16 +1,5 @@
 from celery.task import Task, task
-from .models import Message
-from rapidsms.models import Backend, Connection
-from rapidsms.apps.base import AppBase
 from rapidsms.messages.incoming import IncomingMessage
-from rapidsms.messages.outgoing import OutgoingMessage
-from rapidsms.log.mixin import LoggerMixin
-from threading import Lock, Thread
-
-from urllib import quote_plus
-from urllib2 import urlopen
-import time
-import re
 
 
 

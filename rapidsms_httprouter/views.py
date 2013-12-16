@@ -59,7 +59,11 @@ class HandleIncomingThread(threading.Thread):
 
     def run(self):
         print "thread now handling incoming at %s" % str(datetime.now())
-        message = get_router().handle_incoming(self.data['backend'], self.data['sender'], self.data['message'])
+        try:
+            message = get_router().handle_incoming(self.data['backend'], self.data['sender'], self.data['message'])
+        except Exception as e:
+            print e
+            log.debug(str(e))
         print "thread done at %s" % str(datetime.now())
 
 @never_cache
