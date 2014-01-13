@@ -36,15 +36,15 @@ class Command(BaseCommand, LoggerMixin):
             self.info(code)
         return code
 
-    def build_send_url(self, router_url, backend, recipients, text, priority=1, **kwargs):
+    def build_send_url(self, router_url, backend, recipients_list, text, priority=1, **kwargs):
         """
         Constructs an appropriate send url for the given message.
         """
         # first build up our list of parameters
+        recipients = ' '.join(recipients_list)
         installed_backends = getattr(settings, "BACKENDS_CONFIGURATION", {})
-
         if backend in installed_backends:
-            return self.build_send_url_from_backend(backend, installed_backends[backend], text, recipients)
+            return self.build_send_url_from_backend(backend, installed_backends[backend], text, recipients_list)
         else:
             params = {
                 'backend': backend,
@@ -90,9 +90,9 @@ class Command(BaseCommand, LoggerMixin):
     def send_backend_chunk(self, router_url, pks, backend_name, priority):
         msgs = Message.objects.using(self.db_key).filter(pk__in=pks).exclude(connection__identity__iregex="[a-z]")
         try:
-            url = self.build_send_url(router_url, backend_name,
-                                      ' '.join(msgs.values_list('connection__identity', flat=True)), msgs[0].text,
-                                      priority=priority)
+            recipients_list = list(msgs.values_list('connection__identity', flat=True))
+            self.info("%s " % (type(recipients_list)))
+            url = self.build_send_url(router_url, backend_name,recipients_list, msgs[0].text, priority=str(priority))
             status_code = self.fetch_url(url)
 
             # kannel likes to send 202 responses, really any
@@ -194,8 +194,6 @@ class Command(BaseCommand, LoggerMixin):
             for db_key in DB_KEYS:
                 try:
                     router_url = settings.DATABASES[db_key]['ROUTER_URL']
-
-                    self.debug("servicing db [%s] with router_url [%s]" % (db_key, router_url))
 
                     transaction.enter_transaction_management(using=db_key)
 
