@@ -92,7 +92,7 @@ class Command(BaseCommand, LoggerMixin):
         try:
             url = self.build_send_url(router_url, backend_name,
                                       ' '.join(msgs.values_list('connection__identity', flat=True)), msgs[0].text,
-                                      priority=str(priority))
+                                      priority=priority)
             status_code = self.fetch_url(url)
 
             # kannel likes to send 202 responses, really any
@@ -137,6 +137,9 @@ class Command(BaseCommand, LoggerMixin):
     def process_messages_for_db(self, CHUNK_SIZE, db_key, router_url):
         self.db_key = db_key
         self.debug("looking for MessageBatch's to process with db [%s]" % str(db_key))
+        blocking_batch = MessageBatch.objects.exclude(messages__status='Q').filter(status='Q')
+        if blocking_batch.exists():
+            blocking_batch.update(status='C')
         to_process = MessageBatch.objects.using(db_key).filter(status='Q')
 
         if to_process.exists():
@@ -152,7 +155,7 @@ class Command(BaseCommand, LoggerMixin):
                                                                                             'connection__backend__name')[
                              :CHUNK_SIZE]
                 self.info("chunk of [%d] messages found in db [%s]" % (to_process.count(), db_key))
-                if to_process.count():
+                if to_process.exists():
                     self.debug(
                         "found message batch [pk=%d] [name=%s] with Queued messages to send" % (batch.pk, batch.name))
                     self.send_all(router_url, to_process, priority)
