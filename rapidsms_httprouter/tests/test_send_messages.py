@@ -16,6 +16,9 @@ class SendMessagesCommandTestCase(TestCase):
         self.router_url = "text=%(text)s&to=%(recipient)s&smsc=%(backend)s&%(priority)s"
         self.command.fetch_url = self.fake_get_url
 
+    def tearDown(self):
+        settings.SUPPORTED_BACKENDS = None
+
     def fake_get_url(self, url):
         if "400" in url:
             return 403
@@ -58,6 +61,31 @@ class SendMessagesCommandTestCase(TestCase):
         self.assertEquals((Message.objects.get(pk=msg3.pk)).status, 'Q')
         self.assertEquals((Message.objects.get(pk=msg4.pk)).status, 'S')
 
+    def test_process_messages_only_for_valid_backends(self):
+        settings.SUPPORTED_BACKENDS = ["fake", "valid_backend"]
+        msg1 = self.create_message(1, "fake")
+        msg2 = self.create_message(2, "fake")
+        msg3 = self.create_message(3, "invalid")
+        msg4 = self.create_message(4, "invalid")
+        msg5 = self.create_message(5, "fake")
+        self.command.process_messages_for_db(10, "default", self.router_url)
+        self.assertEquals((Message.objects.get(pk=msg1.pk)).status, 'S')
+        self.assertEquals((Message.objects.get(pk=msg2.pk)).status, 'S')
+        self.assertEquals((Message.objects.get(pk=msg3.pk)).status, 'B')
+        self.assertEquals((Message.objects.get(pk=msg4.pk)).status, 'B')
+        self.assertEquals((Message.objects.get(pk=msg5.pk)).status, 'S')
+
+    def test_batch_is_mark_as_sent_after_marked_messages_with_invalid_backends(self):
+        settings.SUPPORTED_BACKENDS = ["fake", "valid_backend"]
+        msg1 = self.create_message(1, "fake")
+        msg2 = self.create_message(3, "invalid")
+        msg3 = self.create_message(5, "fake")
+        self.command.process_messages_for_db(10, "default", self.router_url)
+        self.assertEquals((Message.objects.get(pk=msg1.pk)).status, 'S')
+        self.assertEquals((Message.objects.get(pk=msg2.pk)).status, 'B')
+        self.assertEquals((Message.objects.get(pk=msg3.pk)).status, 'S')
+        self.command.process_messages_for_db(10, "default", self.router_url)
+        self.assertEquals(MessageBatch.objects.get(pk=self.batch1.pk).status,'C')
 
 class SendMessagesBackendSupportTestCase(TestCase):
     def setUp(self):

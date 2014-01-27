@@ -89,10 +89,18 @@ class Command(BaseCommand, LoggerMixin):
 
     def send_backend_chunk(self, router_url, pks, backend_name, priority):
         msgs = Message.objects.using(self.db_key).filter(pk__in=pks).exclude(connection__identity__iregex="[a-z]")
+
+        supported_backends = getattr(settings, 'SUPPORTED_BACKENDS', None)
+        if supported_backends is not None and backend_name not in supported_backends:
+            self.info("SMS%s have unsupported backends" % pks)
+            msgs.update(status='B')
+            return
+
         try:
             recipients_list = list(msgs.values_list('connection__identity', flat=True))
             self.info("%s " % (type(recipients_list)))
             url = self.build_send_url(router_url, backend_name,recipients_list, msgs[0].text, priority=str(priority))
+
             status_code = self.fetch_url(url)
 
             # kannel likes to send 202 responses, really any
@@ -155,6 +163,7 @@ class Command(BaseCommand, LoggerMixin):
                                                                  status__in=['Q']).order_by('priority', 'status',
                                                                                             'connection__backend__name')[
                              :CHUNK_SIZE]
+
                 self.info("chunk of [%d] messages found in db [%s]" % (to_process.count(), db_key))
                 if to_process.exists():
                     self.debug(
