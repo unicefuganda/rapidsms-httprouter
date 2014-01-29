@@ -87,21 +87,10 @@ class Command(BaseCommand, LoggerMixin):
 
         return full_url
 
-    def get_identity_validation_regex(self, backend_name):
-        supported_backends = getattr(settings, 'SUPPORTED_BACKENDS', None)
-        try:
-            return supported_backends[backend_name]["identity_validation_regex"]
-        except:
-            return None
-
     def send_backend_chunk(self, router_url, pks, backend_name, priority):
+        msgs = Message.objects.using(self.db_key).filter(pk__in=pks).exclude(connection__identity__iregex="[a-z]")
+
         supported_backends = getattr(settings, 'SUPPORTED_BACKENDS', None)
-
-        msgs = Message.objects.using(self.db_key).filter(pk__in=pks)
-
-        if self.get_identity_validation_regex(backend_name) is None:
-            msgs = msgs.exclude(connection__identity__iregex="[a-z]")
-
         if supported_backends is not None and backend_name not in supported_backends:
             self.info("SMS%s have unsupported backends" % pks)
             msgs.update(status='B')
@@ -153,26 +142,6 @@ class Command(BaseCommand, LoggerMixin):
         else:
             self.debug("found no individual messages to process")
 
-    def get_messages_with_invalid_identities(self, backend_name, batch):
-        identity_validation_regex = self.get_identity_validation_regex(backend_name)
-        if identity_validation_regex is not None:
-            invalid_identity_msgs = batch.messages.filter(status='Q',
-                                                          connection__backend__name=backend_name,
-                                                          direction='O') \
-                .exclude(connection__identity__iregex=identity_validation_regex)
-            return invalid_identity_msgs
-        return None
-
-    def filter_invalid_connection_identities(self, batch):
-        supported_backends = getattr(settings, "SUPPORTED_BACKENDS", None)
-
-        if supported_backends is not None:
-            for backend_name, config in supported_backends.iteritems():
-                invalid_identity_msgs = self.get_messages_with_invalid_identities(backend_name, batch)
-
-                if invalid_identity_msgs is not None:
-                    invalid_identity_msgs.update(status='C')
-
     def process_messages_for_db(self, CHUNK_SIZE, db_key, router_url):
         self.db_key = db_key
         self.debug("looking for MessageBatch's to process with db [%s]" % str(db_key))
@@ -180,7 +149,6 @@ class Command(BaseCommand, LoggerMixin):
         if blocking_batch.exists():
             self.info("Clearing %d blocking batches" % blocking_batch.count())
             blocking_batch.update(status='C')
-
         to_process = MessageBatch.objects.using(db_key).filter(status='Q')
 
         if to_process.exists():
@@ -190,8 +158,6 @@ class Command(BaseCommand, LoggerMixin):
             except IndexError:
                 pass
             else:
-                self.filter_invalid_connection_identities(batch)
-
                 priority = batch.priority
                 to_process = batch.messages.using(db_key).filter(direction='O',
                                                                  status__in=['Q']).order_by('priority', 'status',
