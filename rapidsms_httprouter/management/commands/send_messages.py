@@ -208,12 +208,9 @@ class Command(BaseCommand, LoggerMixin):
                     batch.status = 'S'
                     batch.save()
                     self.info("No more messages in MessageBatch [%d] status set to 'S'" % batch.pk)
-                else:
-                    self.debug("Looking to see if there are any messages without a batch to send")
-                    self.send_individual(router_url)
-        else:
-            self.debug("No batches with status 'Q' found, reverting to individual message sending")
-            self.send_individual(router_url)
+
+        self.debug("Looking to see if there are any messages without a batch to send")
+        self.send_individual(router_url)
         transaction.commit(using=db_key)
 
     def handle(self, **options):

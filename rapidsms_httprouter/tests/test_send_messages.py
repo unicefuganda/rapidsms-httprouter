@@ -35,6 +35,16 @@ class SendMessagesCommandTestCase(TestCase):
         message.save()
         return message
 
+    def create_message_without_batch(self, id, backend):
+        fake_connection = Connection(identity=str(id))
+        fake_connection.backend, created = Backend.objects.get_or_create(name=backend)
+        fake_connection.save()
+        message = Message(status='Q', direction="O")
+        message.text = "this is an important message"
+        message.connection = fake_connection
+        message.batch = None
+        message.save()
+        return message
 
     def test_send_all_updates_status_to_sent_if_fetch_returns_200(self):
         self.command.db_key = "default"
@@ -62,7 +72,7 @@ class SendMessagesCommandTestCase(TestCase):
         self.assertEquals((Message.objects.get(pk=msg4.pk)).status, 'S')
 
     def test_process_messages_only_for_valid_backends(self):
-        settings.SUPPORTED_BACKENDS = {"fake":{}, "valid_backend":{}}
+        settings.SUPPORTED_BACKENDS = {"fake": {}, "valid_backend": {}}
         msg1 = self.create_message(1, "fake")
         msg2 = self.create_message(2, "fake")
         msg3 = self.create_message(3, "invalid")
@@ -76,7 +86,7 @@ class SendMessagesCommandTestCase(TestCase):
         self.assertEquals((Message.objects.get(pk=msg5.pk)).status, 'S')
 
     def test_batch_is_mark_as_sent_after_marked_messages_with_invalid_backends(self):
-        settings.SUPPORTED_BACKENDS = {"fake":{}, "valid_backend":{}}
+        settings.SUPPORTED_BACKENDS = {"fake": {}, "valid_backend": {}}
         msg1 = self.create_message(1, "fake")
         msg2 = self.create_message(3, "invalid")
         msg3 = self.create_message(5, "fake")
@@ -85,10 +95,11 @@ class SendMessagesCommandTestCase(TestCase):
         self.assertEquals((Message.objects.get(pk=msg2.pk)).status, 'B')
         self.assertEquals((Message.objects.get(pk=msg3.pk)).status, 'S')
         self.command.process_messages_for_db(10, "default", self.router_url)
-        self.assertEquals(MessageBatch.objects.get(pk=self.batch1.pk).status,'C')
+        self.assertEquals(MessageBatch.objects.get(pk=self.batch1.pk).status, 'C')
 
     def test_that_invalid_numbers_are_marked_as_blocked(self):
-        settings.SUPPORTED_BACKENDS = {"valid_backend":{"identity_validation_regex":"[a-c]+"}, "sms_backend":{"identity_validation_regex":"[0-9]+"}}
+        settings.SUPPORTED_BACKENDS = {"valid_backend": {"identity_validation_regex": "[a-c]+"},
+                                       "sms_backend": {"identity_validation_regex": "[0-9]+"}}
         msg1 = self.create_message("x", "valid_backend")
         msg2 = self.create_message("ab", "valid_backend")
         msg3 = self.create_message(4, "sms_backend")
@@ -109,7 +120,7 @@ class SendMessagesCommandTestCase(TestCase):
         self.assertEquals((Message.objects.get(pk=msg2.pk)).status, 'S')
 
     def test_that_message_is_not_sent_when_connection_identity_has_letters_and_no_validation_regex(self):
-        settings.SUPPORTED_BACKENDS = {"valid_backend":{}}
+        settings.SUPPORTED_BACKENDS = {"valid_backend": {}}
         msg1 = self.create_message("x", "valid_backend")
         msg2 = self.create_message(2, "valid_backend")
 
@@ -117,6 +128,15 @@ class SendMessagesCommandTestCase(TestCase):
 
         self.assertEquals((Message.objects.get(pk=msg1.pk)).status, 'Q')
         self.assertEquals((Message.objects.get(pk=msg2.pk)).status, 'S')
+
+    def test_that_if_single_message_with_out_batch_is_present_it_is_sent_alongside_the_batched_messages(self):
+        settings.SUPPORTED_BACKENDS = {"valid_backend": {}}
+        outgoing_message_without_batch = self.create_message_without_batch("123", "valid_backend")
+        outgoing_message_with_batch = self.create_message("1234", "valid_backend")
+        self.command.process_messages_for_db(10, "default", self.router_url)
+
+        self.assertEquals((Message.objects.get(pk=outgoing_message_without_batch.pk)).status, 'S')
+        self.assertEquals((Message.objects.get(pk=outgoing_message_with_batch.pk)).status, 'S')
 
 
 class SendMessagesBackendSupportTestCase(TestCase):
