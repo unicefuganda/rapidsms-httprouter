@@ -10,8 +10,9 @@ from rapidsms.models import Backend, Connection
 
 class SendMessagesCommandTestCase(TestCase):
     def setUp(self):
-        self.batch1 = MessageBatch(status="Q", name="batch1")
+        self.batch1 = MessageBatch(status="Q", name="batch1", priority=1)
         self.batch1.save()
+
         self.command = Command()
         self.router_url = "text=%(text)s&to=%(recipient)s&smsc=%(backend)s&%(priority)s"
         self.command.fetch_url = self.fake_get_url
@@ -24,14 +25,14 @@ class SendMessagesCommandTestCase(TestCase):
             return 403
         return 200
 
-    def create_message(self, id, backend):
+    def create_message(self, id, backend, batch=None):
         fake_connection = Connection(identity=str(id))
         fake_connection.backend, created = Backend.objects.get_or_create(name=backend)
         fake_connection.save()
         message = Message(status='Q', direction="O")
         message.connection = fake_connection
 
-        message.batch = self.batch1;
+        message.batch = self.batch1 if batch is None else batch
         message.save()
         return message
 
@@ -137,6 +138,17 @@ class SendMessagesCommandTestCase(TestCase):
 
         self.assertEquals((Message.objects.get(pk=outgoing_message_without_batch.pk)).status, 'S')
         self.assertEquals((Message.objects.get(pk=outgoing_message_with_batch.pk)).status, 'S')
+
+    def test_that_it_first_sends_messages_from_a_batch_with_higher_priority(self):
+        batch2 = MessageBatch(status="Q", name="batch2", priority=2)
+        batch2.save()
+        outgoing_message_with_low_priority_batch = self.create_message("1234", "test_backend")
+        outgoing_message_with_high_priority_batch = self.create_message("3331", "test_backend", batch2)
+
+        self.command.process_messages_for_db(10, "default", self.router_url)
+
+        self.assertEquals((Message.objects.get(pk=outgoing_message_with_low_priority_batch.pk)).status, 'Q')
+        self.assertEquals((Message.objects.get(pk=outgoing_message_with_high_priority_batch.pk)).status, 'S')
 
 
 class SendMessagesBackendSupportTestCase(TestCase):
