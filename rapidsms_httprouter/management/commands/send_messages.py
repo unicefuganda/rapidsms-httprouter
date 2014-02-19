@@ -119,6 +119,9 @@ class Command(BaseCommand, LoggerMixin):
             if int(status_code / 100) == 2:
                 self.info("SMS%s SENT" % pks)
                 msgs.update(status='S')
+            elif int(status_code) == 403:
+                self.info("SMS%s DISCARDED BY KANNEL... Taken out of queue")
+                msgs.update(status='K')
             else:
                 self.info("SMS%s Message not sent, got status: %s .. queued for later delivery." % (pks, status_code))
                 msgs.update(status='Q')

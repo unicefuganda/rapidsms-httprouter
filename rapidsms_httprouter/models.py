@@ -28,7 +28,8 @@ STATUS_CHOICES = (
     ("D", "Delivered"),
 
     ("C", "Cancelled"),
-    ("E", "Errored")
+    ("E", "Errored"),
+    ("K", "Kannel Discarded")
 )
 
 #
