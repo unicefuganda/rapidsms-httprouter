@@ -184,7 +184,7 @@ class Command(BaseCommand, LoggerMixin):
             self.info("Clearing %d blocking batches" % blocking_batch.count())
             blocking_batch.update(status='C')
 
-        to_process = MessageBatch.objects.using(db_key).filter(status='Q')
+        to_process = MessageBatch.objects.using(db_key).filter(status='Q').order_by('-priority')
 
         if to_process.exists():
             self.info("found [%d] batches with status [Q] in db [%s] to process" % (to_process.count(), db_key))

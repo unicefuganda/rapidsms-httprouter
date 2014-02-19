@@ -77,14 +77,14 @@ class Message(models.Model):
 
     @classmethod
     @transaction.commit_on_success
-    def mass_text(cls, text, connections, status='P', batch_status='Q', batch_name=None):
+    def mass_text(cls, text, connections, status='P', batch_status='Q', batch_name=None, priority=1):
         #log.info("[mass_text] TRANSACTION START")
         if connections is not None:
             pass
             # log.info(
             #     "[mass_text] Sending message to [%d] connections with batch name [%s]" % (len(connections), batch_name))
 
-        batch = MessageBatch.objects.create(status=batch_status, name=batch_name, priority=1)#Todo fix the damn prioty shit
+        batch = MessageBatch.objects.create(status=batch_status, name=batch_name, priority=priority)
         sql = 'insert into rapidsms_httprouter_message (text, date, direction, status, batch_id, connection_id, priority) values '
         insert_list = []
         params_list = []
