@@ -69,7 +69,7 @@ class SendMessagesCommandTestCase(TestCase):
         self.command.process_messages_for_db(5, "default", self.router_url)
         self.assertEquals((Message.objects.get(pk=msg1.pk)).status, 'S')
         self.assertEquals((Message.objects.get(pk=msg2.pk)).status, 'S')
-        self.assertEquals((Message.objects.get(pk=msg3.pk)).status, 'Q')
+        self.assertEquals((Message.objects.get(pk=msg3.pk)).status, 'K')
         self.assertEquals((Message.objects.get(pk=msg4.pk)).status, 'S')
 
     def test_process_messages_only_for_valid_backends(self):
