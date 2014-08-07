@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import traceback
 import time
 from urllib import quote_plus
@@ -13,6 +15,7 @@ from rapidsms_httprouter.models import Message, MessageBatch
 from rapidsms.log.mixin import LoggerMixin
 import requests
 from rapidsms_httprouter.router import get_router
+from rapidsms_httprouter_src.rapidsms_httprouter.utils import replace_characters
 
 
 class Command(BaseCommand, LoggerMixin):
@@ -42,7 +45,11 @@ class Command(BaseCommand, LoggerMixin):
         """
         # first build up our list of parameters
         recipients = ' '.join(recipients_list)
+        special_chars_mapping = getattr(settings, "SPECIAL_CHARS_MAPPING", {})
+        text = replace_characters(text, special_chars_mapping)
+
         installed_backends = getattr(settings, "BACKENDS_CONFIGURATION", {})
+
         if backend in installed_backends:
             return self.build_send_url_from_backend(backend, installed_backends[backend], text, recipients_list)
         else:
@@ -51,7 +58,7 @@ class Command(BaseCommand, LoggerMixin):
                 'recipient': recipients,
                 'text': text,
                 'priority': priority,
-            }
+                }
 
             # make sure our parameters are URL encoded
             params.update(kwargs)

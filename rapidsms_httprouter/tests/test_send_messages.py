@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from django.test import TestCase
 from mock import MagicMock, patch, Mock
 from django.conf import settings
@@ -6,6 +8,7 @@ from rapidsms.backends.base import BackendBase
 from rapidsms_httprouter.management.commands.send_messages import Command
 from rapidsms_httprouter.models import MessageBatch, Message
 from rapidsms.models import Backend, Connection
+from urllib import quote_plus
 
 
 class SendMessagesCommandTestCase(TestCase):
@@ -46,6 +49,30 @@ class SendMessagesCommandTestCase(TestCase):
         message.batch = None
         message.save()
         return message
+
+    def test_that_build_send_url_replace_special_characters_for_text(self):
+        backend = "aggregator"
+        recipients = ["2561245678"]
+        text = "çà çó ê"
+        settings.SPECIAL_CHARS_MAPPING = {"ç": "Ç", "ê": "e"}
+
+        url = self.command.build_send_url(self.router_url, backend, recipients, text)
+
+        expected_text = quote_plus("Çà Çó e")
+        expected_url = self.router_url % ({"backend":backend, "recipient": recipients[0], "text": expected_text, "priority": 1})
+        self.assertEquals(expected_url, url)
+
+    def test_that_build_send_url_do_not_change_NON_special_characters(self):
+        backend = "aggregator"
+        recipients = ["2561245678"]
+        text = "ha he ho"
+        settings.SPECIAL_CHARS_MAPPING = {"ç": "Ç", "ê": "e"}
+
+        url = self.command.build_send_url(self.router_url, backend, recipients, text)
+
+        expected_text = quote_plus(text)
+        expected_url = self.router_url % ({"backend":backend, "recipient": recipients[0], "text": expected_text, "priority": 1})
+        self.assertEquals(expected_url, url)
 
     def test_send_all_updates_status_to_sent_if_fetch_returns_200(self):
         self.command.db_key = "default"
