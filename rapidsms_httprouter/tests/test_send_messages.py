@@ -62,6 +62,21 @@ class SendMessagesCommandTestCase(TestCase):
         expected_url = self.router_url % ({"backend":backend, "recipient": recipients[0], "text": expected_text, "priority": 1})
         self.assertEquals(expected_url, url)
 
+    def test_build_send_url_fixes_incompatible_utf_8_message_text(self):
+        backend = "aggregator"
+        recipients = ["2561245678"]
+        text = u'Hello Emanuele: ù ê é è Ç à @ ç'
+        settings.SPECIAL_CHARS_MAPPING = {'ç': 'Ç', 'ê': 'e'}
+
+        connection = Connection.objects.create(identity=recipients[0], backend=Backend.objects.create(name=backend))
+        message = Message.objects.create(text=text, connection=connection)
+
+        url = self.command.build_send_url(self.router_url, backend, recipients, message.text)
+
+        expected_text = quote_plus('Hello Emanuele: ù e é è Ç à @ Ç')
+        expected_url = self.router_url % ({"backend":backend, "recipient": recipients[0], "text": expected_text, "priority": 1})
+        self.assertEquals(expected_url, url)
+
     def test_that_build_send_url_do_not_change_NON_special_characters(self):
         backend = "aggregator"
         recipients = ["2561245678"]

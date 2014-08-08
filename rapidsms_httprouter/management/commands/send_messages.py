@@ -15,7 +15,7 @@ from rapidsms_httprouter.models import Message, MessageBatch
 from rapidsms.log.mixin import LoggerMixin
 import requests
 from rapidsms_httprouter.router import get_router
-from rapidsms_httprouter_src.rapidsms_httprouter.utils import replace_characters
+from rapidsms_httprouter_src.rapidsms_httprouter.utils import replace_characters, stringify
 
 
 class Command(BaseCommand, LoggerMixin):
@@ -63,10 +63,7 @@ class Command(BaseCommand, LoggerMixin):
             # make sure our parameters are URL encoded
             params.update(kwargs)
             for k, v in params.items():
-                try:
-                    params[k] = quote_plus(str(v))
-                except UnicodeEncodeError:
-                    params[k] = quote_plus(str(v.encode('UTF-8')))
+                params[k] = quote_plus(stringify(v))
 
             # is this actually a dict?  if so, we want to look up the appropriate backend
             if type(router_url) is dict:
