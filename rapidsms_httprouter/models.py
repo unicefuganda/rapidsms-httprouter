@@ -38,6 +38,8 @@ STATUS_CHOICES = (
 #
 # See: https://coderanger.net/2011/01/select-for-update/
 #
+
+
 class MessageBatch(models.Model):
     status = models.CharField(max_length=1, choices=STATUS_CHOICES)
     name = models.CharField(max_length=15, null=True, blank=True)
@@ -77,14 +79,14 @@ class Message(models.Model):
 
     @classmethod
     @transaction.commit_on_success
-    def mass_text(cls, text, connections, status='P', batch_status='Q', batch_name=None, priority=1):
-        #log.info("[mass_text] TRANSACTION START")
+    def mass_text(cls, text, connections, status='P', batch_status='Q', batch_name=None):
+        # log.info("[mass_text] TRANSACTION START")
         if connections is not None:
             pass
             # log.info(
             #     "[mass_text] Sending message to [%d] connections with batch name [%s]" % (len(connections), batch_name))
 
-        batch = MessageBatch.objects.create(status=batch_status, name=batch_name, priority=priority)
+        batch = MessageBatch.objects.create(status=batch_status, name=batch_name, priority=1)  # Todo fix the damn prioty shit
         sql = 'insert into rapidsms_httprouter_message (text, date, direction, status, batch_id, connection_id, priority) values '
         insert_list = []
         params_list = []
@@ -95,15 +97,14 @@ class Message(models.Model):
             insert_list.append("(%s, %s, 'O', %s, %s, %s, %s)")
             params_list += [text, d, status, batch.pk, connection.pk, 10]
 
-        sql = "%s %s returning id" % (sql, ",".join(insert_list))
-        c.execute(sql, params_list)
+        toret = []
+        if insert_list:
+            sql = "%s %s returning id" % (sql, ",".join(insert_list))
+            c.execute(sql, params_list)
 
-        pks = c.fetchall()
-        toret = Message.objects.filter(pk__in=[pk[0] for pk in pks])
-        mass_text_sent.send(sender=batch, messages=toret, status=status)
+            pks = c.fetchall()
+            toret = Message.objects.filter(pk__in=[pk[0] for pk in pks])
+            mass_text_sent.send(sender=batch, messages=toret, status=status)
 
         # log.info("[mass_text] TRANSACTION COMMIT")
         return toret
-
-
-
